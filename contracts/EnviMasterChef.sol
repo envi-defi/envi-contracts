@@ -10,14 +10,14 @@ import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 import "./EnviToken.sol";
 
-// MasterChef is the master of ENVI. He can make ENVI and he is a fair guy.
+// EnviMasterChef is the master of ENVI. He can make ENVI and he is a fair guy.
 //
 // Note that it's ownable and the owner wields tremendous power. The ownership
 // will be transferred to a governance smart contract once ENVI is sufficiently
 // distributed and the community can show to govern itself.
 //
 // Have fun reading it. Hopefully it's bug-free. God bless.
-contract MasterChef is Ownable, ReentrancyGuard {
+contract EnviMasterChef is Ownable, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeBEP20 for IBEP20;
 
