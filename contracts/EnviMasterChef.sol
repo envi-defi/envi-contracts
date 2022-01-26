@@ -3,12 +3,11 @@
 pragma solidity 0.6.12;
 
 import "@openzeppelin/contracts/math/SafeMath.sol";
-import "./libs/IBEP20.sol";
-import "./libs/SafeBEP20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-
-import "./EnviToken.sol";
+import "./libs/IBEP20.sol";
+import "./libs/SafeBEP20.sol";
+import "./EnviMinter.sol";
 
 // EnviMasterChef is the master of ENVI. He can make ENVI and he is a fair guy.
 //
@@ -52,19 +51,19 @@ contract EnviMasterChef is Ownable, ReentrancyGuard {
     }
 
     // The ENVI TOKEN!
-    EnviToken public envi;
-    // Dev address.
-    address public devAddress;
+    IBEP20 public enviToken;
+    // The ENVI Minter
+    EnviMinter public enviMinter;
     // Deposit Fee address
     address public feeAddress;
     // ENVI tokens created per block.
     uint256 public enviPerBlock;
     // Maximum emission rate (governance token decimal value is 18)
     uint256 public constant MAXIMUM_EMISSON_RATE = 10**22;
-    // Bonus muliplier for early envi makers.
+    // Bonus muliplier for early ENVI makers.
     uint256 public constant BONUS_MULTIPLIER = 1;
-    // Max harvest interval: 14 days.
-    uint256 public constant MAXIMUM_HARVEST_INTERVAL = 14 days;
+    // Max harvest interval: 6 months.
+    uint256 public constant MAXIMUM_HARVEST_INTERVAL = 180 days;
 
     // Info of each pool.
     PoolInfo[] public poolInfo;
@@ -78,7 +77,7 @@ contract EnviMasterChef is Ownable, ReentrancyGuard {
     uint256 public totalLockedUpRewards;
 
     // Max deposit fee: 10%
-    uint16 public constant MAXIMUM_DEPOSIT_FEE = 200;
+    uint16 public constant MAXIMUM_DEPOSIT_FEE = 400;
     
     event Deposit(address indexed user, uint256 indexed pid, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed pid, uint256 amount);
@@ -88,7 +87,6 @@ contract EnviMasterChef is Ownable, ReentrancyGuard {
         uint256 amount
     );
     event SetFeeAddress(address indexed user, address indexed newAddress);
-    event SetDevAddress(address indexed user, address indexed newAddress);
     event EmissionRateUpdated(
         address indexed caller,
         uint256 previousAmount,
@@ -101,18 +99,18 @@ contract EnviMasterChef is Ownable, ReentrancyGuard {
     );
 
     constructor(
-        EnviToken _envi,
-        address _devAddr,
+        IBEP20 _enviToken,
+        EnviMinter _enviMinter,
         address _feeAddr,
         uint256 _startBlock,
         uint256 _enviPerBlock
     ) public {
-        envi = _envi;
+        enviToken = _enviToken;
+        enviMinter = _enviMinter;
         startBlock = _startBlock;
         require(_enviPerBlock <= MAXIMUM_EMISSON_RATE, "EnviMasterChef::constructor: more than maximum emission rate");
         enviPerBlock = _enviPerBlock;
-
-        devAddress = _devAddr;
+        
         feeAddress = _feeAddr;
     }
 
@@ -261,8 +259,7 @@ contract EnviMasterChef is Ownable, ReentrancyGuard {
             .mul(enviPerBlock)
             .mul(pool.allocPoint)
             .div(totalAllocPoint);
-        envi.mint(devAddress, enviReward.div(10));
-        envi.mint(address(this), enviReward);
+        
         pool.accEnviPerShare = pool.accEnviPerShare.add(
             enviReward.mul(1e12).div(pool.lpSupply)
         );
@@ -277,8 +274,8 @@ contract EnviMasterChef is Ownable, ReentrancyGuard {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
         updatePool(_pid);
-        
         payOrLockupPendingEnvi(_pid);
+
         if (_amount > 0) {
             uint256 balanceBefore = pool.lpToken.balanceOf(address(this));
             pool.lpToken.safeTransferFrom(
@@ -326,6 +323,7 @@ contract EnviMasterChef is Ownable, ReentrancyGuard {
         user.amount = 0;
         user.rewardDebt = 0;
         user.rewardLockedUp = 0;
+        totalLockedUpRewards = totalLockedUpRewards.sub(user.rewardLockedUp);
         user.nextHarvestUntil = 0;
         pool.lpSupply = pool.lpSupply.sub(amount);
         pool.lpToken.safeTransfer(address(msg.sender), amount);
@@ -367,24 +365,11 @@ contract EnviMasterChef is Ownable, ReentrancyGuard {
         }
     }
 
-    // Safe envi transfer function, just in case if rounding error causes pool to not have enough ENVIs.
+    // Safe ENVI transfer function, just in case if rounding error causes pool to not have enough ENVIs.
     function safeEnviTransfer(address _to, uint256 _amount) internal {
-        uint256 enviBal = envi.balanceOf(address(this));
-        if (_amount > enviBal) {
-            envi.transfer(_to, enviBal);
-        } else {
-            envi.transfer(_to, _amount);
-        }
+        enviMinter.safeEnviTransfer(_to, _amount);
     }
-
-    // Update dev address by the previous dev.
-    function setDevAddress(address _devAddress) public {
-        require(msg.sender == devAddress, "EnviMasterChef::setDevAddress: FORBIDDEN");
-        require(_devAddress != address(0), "EnviMasterChef::setDevAddress: ZERO");
-        devAddress = _devAddress;
-        emit SetDevAddress(msg.sender, _devAddress);
-    }
-
+    
     function setFeeAddress(address _feeAddress) public {
         require(msg.sender == feeAddress, "EnviMasterChef::setFeeAddress: FORBIDDEN");
         require(_feeAddress != address(0), "EnviMasterChef::setFeeAddress: ZERO");
